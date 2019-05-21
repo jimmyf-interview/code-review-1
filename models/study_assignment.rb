@@ -29,12 +29,12 @@ class StudyAssignment < ActiveRecord::Base
     assignment.delete
   end
 
-  def is_active?
-    ['enabled', 'open', 'accepted'].include?(status)
+  def delete
+    deleted_at = Time.utc.now
+    save
   end
 
-  def set_status(new_status)
-    status = new_status
-    save!
+  def is_active?
+    ['enabled', 'open', 'accepted'].include?(status)
   end
 end

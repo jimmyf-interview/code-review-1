@@ -2,8 +2,8 @@ class User < ActiveRecord::Base
   has_many :study_assignments
 
   def self.all_inactive
-    Users.all.select do |user|
-      StudyAssignment.where(user_uuid: user.uuid).any? { |assignment| !assignment.undeleted }
+    Users.all.reject do |user|
+      user.study_assignments.any? { |assignment| assignment.is_active? }
     end
   end
 
@@ -14,20 +14,16 @@ class User < ActiveRecord::Base
   def assign_to_study(study_uuid, role, sites = [])
     assignment = study_assignments.find { |assignment| assignment.study_uuid == study_uuid }
 
-    unless assignment.active
-      assignment.active = true
-    end
-
     if assignment
       if role.is_a?(Array)
         assignment.roles += role
-        assignment.save
       else
         assignment.roles << role
-        assignment.save
       end
 
+      assignment.status = 'enabled'
       assignment.sites << sites
+      assignment.save
     else
       if role.is_a?(Array)
         StudyAssignment.new(study_uuid: study_uuid, roles: role, sites: sites)
@@ -49,7 +45,7 @@ class User < ActiveRecord::Base
     assignment.roles.delete(roles)
 
     if assignment.roles.empty?
-      assignment.active = false
+      assignment.status = 'inactive'
     end
 
     assignment.save
@@ -58,33 +54,30 @@ class User < ActiveRecord::Base
   def unassign_from_study(study_uuid)
     assignment = current_assignments.find { |assignment| assignment.study_uuid == study_uuid }
     assignment.roles = []
-    assignment.active = false
+    assignment.status = 'inactive'
+    assignment.save
 
     courses = Course.find_by(study_uuid: study_uuid)
     course_completions = courses.map do |course|
       CourseCompletion.where(course_uuid: course.uuid, user_uuid: uuid)
     end
 
-    course_completions.each do |course_completion|
-      course_completion.delete
-    end
+    course_completions.each { |course_completion| course_completion.delete }
   end
 
   def unassign_from_all
     study_uuids = current_assignments.map { |assignment| assignment.study_uuid }
-    current_assignments.each { |assignment| assignment.delete }
+    current_assignments.each do |assignment|
+      assignment.roles = []
+      assignment.status = 'inactive'
+      assignment.save
+    end
 
     courses = Course.find_by(study_uuid: study_uuids)
     course_completions = courses.map do |course|
       CourseCompletion.where(course_uuid: course.uuid, user_uuid: uuid)
     end
 
-    course_completions.each do |course_completion|
-      course_completion.delete
-    end
-  end
-
-  def can_access?(resource)
-    AuthorizationHelper.authorized?(user, resource)
+    course_completions.each { |course_completion| course_completion.delete }
   end
 end
